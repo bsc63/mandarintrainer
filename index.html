@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>汉语 · Mandarin-Trainer für Deutschsprachige</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b22; --card2:#20242e; --line:#2c3140;
+    --txt:#e8eaf0; --dim:#9aa2b1; --red:#e5484d; --gold:#f5c451;
+    --green:#3fb950; --blue:#4a9eff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    line-height:1.5; min-height:100vh;
+  }
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 20px; border-bottom:1px solid var(--line);
+  }
+  .brand{font-weight:700; letter-spacing:.5px}
+  .brand span{color:var(--red)}
+  .phase{font-size:13px; color:var(--dim)}
+  .bar{height:3px; background:var(--line)}
+  #barFill{height:100%; width:0%; background:linear-gradient(90deg,var(--red),var(--gold)); transition:width .4s ease}
+  main{max-width:620px; margin:0 auto; padding:28px 20px 60px}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:26px 24px; margin-bottom:18px;
+  }
+  .step{font-size:12px; text-transform:uppercase; letter-spacing:1.2px; color:var(--gold); margin-bottom:14px}
+  h1{font-size:22px; margin:0 0 8px}
+  h2{font-size:18px; margin:0 0 18px; font-weight:600}
+  p{margin:0 0 14px}
+  .prompt{color:var(--dim); font-size:15px}
+  .hanzi{font-size:56px; text-align:center; margin:16px 0 6px; letter-spacing:4px}
+  .sentence{font-size:26px; text-align:center; margin:16px 0; letter-spacing:2px}
+  .pinyin{text-align:center; color:var(--gold); font-size:19px; margin-bottom:6px}
+  .de{color:var(--dim); font-size:15px}
+  button{
+    font:inherit; cursor:pointer; border-radius:11px; padding:12px 18px;
+    border:1px solid var(--line); background:var(--card2); color:var(--txt);
+    transition:.15s; font-weight:500;
+  }
+  button:hover:not(:disabled){border-color:var(--gold); transform:translateY(-1px)}
+  button:disabled{opacity:.45; cursor:default}
+  .primary{background:var(--red); border-color:var(--red); color:#fff}
+  .primary:hover:not(:disabled){background:#f05a5f; border-color:#f05a5f}
+  .secondary{background:transparent}
+  .options{display:grid; gap:10px; margin-top:18px}
+  .opt{text-align:left; padding:14px 18px}
+  .opt.right{background:rgba(63,185,80,.18); border-color:var(--green); color:#b6f0c0}
+  .opt.wrong{background:rgba(229,72,77,.16); border-color:var(--red); color:#ffb9bb}
+  .btnrow{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:16px}
+  .good{color:var(--green)}
+  .bad{color:#ff8a8d}
+  .hint{color:var(--dim); font-size:14px}
+  .result{margin-top:16px; min-height:24px; text-align:center}
+  input[type=text]{
+    width:100%; padding:14px 16px; font:inherit; border-radius:11px;
+    background:var(--card2); border:1px solid var(--line); color:var(--txt);
+    margin-bottom:12px;
+  }
+  input[type=text]:focus{outline:none; border-color:var(--gold)}
+  .center{text-align:center}
+  .big{font-size:40px; text-align:center; margin:8px 0 20px}
+  .badge{
+    display:inline-block; padding:6px 14px; border-radius:99px;
+    background:rgba(245,196,81,.14); color:var(--gold); font-size:14px;
+    border:1px solid rgba(245,196,81,.3); margin-bottom:16px;
+  }
+  .stat{display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line); font-size:15px}
+  .stat:last-child{border-bottom:none}
+  .stat span:last-child{color:var(--gold); font-weight:600}
+  .list{margin:0; padding-left:20px; color:var(--dim)}
+  .list li{margin-bottom:6px}
+  .mic-active{animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.5}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">汉<span>语</span> · Mandarin-Trainer</div>
+  <div class="phase" id="phaseLabel">Bereit</div>
+</div>
+<div class="bar"><div id="barFill"></div></div>
+<main id="screen"></main>
+
+<script>
+/* ============================================================
+   0. HILFSFUNKTIONEN
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const screenEl = $('#screen');
+const phaseEl  = $('#phaseLabel');
+const barEl    = $('#barFill');
+
+const sleep   = ms => new Promise(r => setTimeout(r, ms));
+const shuffle = a  => [...a].sort(() => Math.random() - .5);
+const clamp   = (v,a,b) => Math.min(b, Math.max(a, v));
+
+// Pinyin normalisieren: Töne weg, Kleinbuchstaben, nur a-z
+const normPy = s => s.toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z]/g,'');
+
+// Chinesisch normalisieren: Leerraum + Satzzeichen weg
+const normHz = s => s.replace(/[\s，。？！、,.?!…：；]/g,'');
+
+function setPhase(t){ phaseEl.textContent = t; }
+function setBar(p){ barEl.style.width = (p*100).toFixed(1) + '%'; }
+function render(html){ screenEl.innerHTML = html; }
+
+/* ============================================================
+   1. SPRACHAUSGABE (TTS)
+   ============================================================ */
+let zhVoice = null;
+function loadVoices(){
+  const v = speechSynthesis.getVoices();
+  zhVoice = v.find(x => /zh[-_]CN/i.test(x.lang))
+         || v.find(x => /^zh/i.test(x.lang)) || null;
+}
+loadVoices();
+if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = loadVoices;
+
+function speak(text, rate = 0.8){
+  return new Promise(resolve => {
+    if(!('speechSynthesis' in window)) return resolve();
+    try{
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      u.rate = rate;
+      if(zhVoice) u.voice = zhVoice;
+      let done = false;
+      const fin = () => { if(!done){ done = true; resolve(); } };
+      u.onend = fin; u.onerror = fin;
+      speechSynthesis.speak(u);
+      setTimeout(fin, 400 + text.length * 500); // Sicherheitsnetz
+    }catch(e){ resolve(); }
+  });
+}
+
+/* ============================================================
+   2. SPRACHEINGABE (STT)
+   ============================================================ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function listenOnce(){
+  return new Promise((resolve, reject) => {
+    if(!SR) return reject('kein-mikrofon-api');
+    let done = false;
+    const finish = (val) => { if(!done){ done = true; resolve(val); } };
+    try{
+      const r = new SR();
+      r.lang = 'zh-CN';
+      r.interimResults = false;
+      r.maxAlternatives = 3;
+      r.onresult = e => {
+        const alts = [];
+        for(let i = 0; i < e.results[0].length; i++) alts.push(e.results[0][i].transcript);
+        finish(alts);
+      };
+      r.onerror = e => { if(!done){ done = true; reject(e.error || 'fehler'); } };
+      r.onend   = () => finish([]);
+      r.start();
+      setTimeout(() => { if(!done){ try{ r.stop(); }catch(e){} finish([]); } }, 9000);
+    }catch(e){ reject('start-fehler'); }
+  });
+}
+
+/* ============================================================
+   3. DATEN: FRAGENPOOL (adaptiv nach Stufe)
+   ============================================================ */
+const QUESTIONS = [
+  /* ---------- Stufe 1 ---------- */
+  { id:'L1-a', level:1, type:'listen', audio:'你好', prompt:'Was hörst du?',
+    answer:'Hallo', options:['Hallo','Danke','Tschüss','Bitte'] },
+  { id:'L1-b', level:1, type:'read', hanzi:'水', prompt:'Was bedeutet dieses Zeichen?',
+    answer:'Wasser', options:['Feuer','Wasser','Holz','Erde'] },
+  { id:'L1-c', level:1, type:'write', prompt:'Schreibe „danke" auf Chinesisch (Pinyin, Töne optional):',
+    answer:'xiexie', display:'xièxie' },
+  { id:'L1-d', level:1, type:'listen', audio:'谢谢', prompt:'Was hörst du?',
+    answer:'Danke', options:['Danke','Guten Morgen','Auf Wiedersehen','Entschuldigung'] },
+  { id:'L1-e', level:1, type:'grammar', sentence:'我 ___ 中国人。', prompt:'Welches Wort passt? (Ich bin Chinese/Chinesin.)',
+    answer:'是', options:['是','有','在','了'], explain:'是 (shì) = „sein"' },
+
+  /* ---------- Stufe 2 ---------- */
+  { id:'L2-a', level:2, type:'listen', audio:'朋友', prompt:'Was hörst du?',
+    answer:'Freund', options:['Freund','Familie','Lehrer','Nachbar'] },
+  { id:'L2-b', level:2, type:'read', hanzi:'学校', prompt:'Was bedeutet das?',
+    answer:'Schule', options:['Schule','Krankenhaus','Bahnhof','Büro'] },
+  { id:'L2-c', level:2, type:'write', prompt:'Schreibe „heute" auf Chinesisch (Pinyin):',
+    answer:'jintian', display:'jīntiān' },
+  { id:'L2-d', level:2, type:'grammar', sentence:'我 ___ 北京。', prompt:'Welches Wort passt? (Ich bin in Peking.)',
+    answer:'在', options:['在','是','有','和'], explain:'在 (zài) = „sich befinden in"' },
+  { id:'L2-e', level:2, type:'listen', audio:'喜欢', prompt:'Was hörst du?',
+    answer:'mögen', options:['mögen','brauchen','kaufen','vergessen'] },
+
+  /* ---------- Stufe 3 ---------- */
+  { id:'L3-a', level:3, type:'listen', audio:'因为', prompt:'Was hörst du?',
+    answer:'weil', options:['weil','obwohl','damit','aber'] },
+  { id:'L3-b', level:3, type:'read', hanzi:'环境', prompt:'Was bedeutet das?',
+    answer:'Umgebung', options:['Umgebung','Erfahrung','Entscheidung','Gewohnheit'] },
+  { id:'L3-c', level:3, type:'write', prompt:'Schreibe „entscheiden" auf Chinesisch (Pinyin):',
+    answer:'jueding', display:'juédìng' },
+  { id:'L3-d', level:3, type:'grammar', sentence:'因为下雨，___ 我不去了。', prompt:'Welches Wort passt? (Weil es regnet, gehe ich deshalb nicht.)',
+    answer:'所以', options:['所以','但是','因为','如果'], explain:'因为 … 所以 … = „weil … deshalb …"' },
+  { id:'L3-e', level:3, type:'listen', audio:'习惯', prompt:'Was hörst du?',
+    answer:'Gewohnheit', options:['Gewohnheit','Erfahrung','Umgebung','Entscheidung'] },
+];
+
+/* ============================================================
+   4. DATEN: VOKABELN FÜR DIE ÜBUNGSPHASE
+   ============================================================ */
+const VOCAB = {
+  1: [
+    { hz:'你好', py:'nǐ hǎo',  de:'Hallo' },
+    { hz:'谢谢', py:'xièxie',  de:'danke' },
+    { hz:'再见', py:'zàijiàn', de:'auf Wiedersehen' },
+    { hz:'水',   py:'shuǐ',    de:'Wasser' },
+    { hz:'人',   py:'rén',     de:'Mensch' },
+    { hz:'是',   py:'shì',     de:'sein' },
+  ],
+  2: [
+    { hz:'朋友', py:'péngyou', de:'Freund' },
+    { hz:'学校', py:'xuéxiào', de:'Schule' },
+    { hz:'今天', py:'jīntiān', de:'heute' },
+    { hz:'名字', py:'míngzi',  de:'Name' },
+    { hz:'喜欢', py:'xǐhuan',  de:'mögen' },
+    { hz:'吃饭', py:'chīfàn',  de:'essen' },
+  ],
+  3: [
+    { hz:'因为', py:'yīnwèi',   de:'weil' },
+    { hz:'决定', py:'juédìng',  de:'entscheiden' },
+    { hz:'环境', py:'huánjìng', de:'Umgebung' },
+    { hz:'解决', py:'jiějué',   de:'lösen' },
+    { hz:'习惯', py:'xíguàn',   de:'Gewohnheit' },
+    { hz:'经验', py:'jīngyàn',  de:'Erfahrung' },
+  ]
+};
+
+const LEVEL_NAME = {
+  1: 'HSK 1 · Anfänger',
+  2: 'HSK 2 · Grundlagen',
+  3: 'HSK 3 · Mittelstufe'
+};
+
+/* ============================================================
+   5. GLOBALER ZUSTAND
+   ============================================================ */
+const state = {
+  round: 1,
+  level: 1,
+  testLog: [],      // [{round, correct, level}]
+  learned: []       // geübte Vokabeln
+};
+
+// ►►► ENDE PAKET 1 — Paket 2 direkt hier unten einfügen ◄◄◄
+/* ◄◄◄ FORTSETZUNG AUS PAKET 1 ◄◄◄
+   ============================================================
+   6. STARTBILDSCHIRM
+   ============================================================ */
+function showStart(){
+  setPhase('Bereit');
+  setBar(0);
+  render(`
+    <div class="card center">
+      <div class="badge">汉语 · Mandarin für Deutschsprachige</div>
+      <h1>Hören · Sprechen · Schreiben</h1>
+      <p class="prompt">Der Ablauf:</p>
+      <ol class="list" style="text-align:left; display:inline-block">
+        <li>5-Fragen-Einstufungstest</li>
+        <li>Angepasste Übungen (Hören, Sprechen, Schreiben)</li>
+        <li>Erneuter Test → neue Stufe</li>
+        <li>Wieder angepasste Übungen</li>
+      </ol>
+      <p class="hint" style="margin-top:18px">
+        ${SR
+          ? '🎤 Mikrofon wird für die Sprechübungen genutzt.'
+          : '⚠️ Dein Browser unterstützt keine Spracherkennung. Nutze Chrome oder Edge – die Sprechübungen werden sonst übersprungen.'}
+      </p>
+      <div class="btnrow">
+        <button class="primary" id="startBtn">Test starten</button>
+      </div>
+    </div>
+  `);
+  $('#startBtn').onclick = () => startTest(1, 1);
+}
+
+/* ============================================================
+   7. EINSTUFUNGSTEST (adaptiv)
+   ============================================================ */
+async function startTest(round, startLevel){
+  state.round = round;
+  setPhase(`Test ${round}`);
+  setBar(0);
+
+  const TOTAL = 5;
+  const used = new Set();
+  const log = [];
+  let level = startLevel;
+
+  for(let i = 0; i < TOTAL; i++){
+    setBar(i / TOTAL);
+    setPhase(`Test ${round} · Frage ${i+1}/${TOTAL}`);
+    const q = pickQuestion(level, used);
+    used.add(q.id);
+    const ok = await askQuestion(q);
+    log.push({ level: q.level, ok });
+    level = ok ? clamp(level + 1, 1, 3) : clamp(level - 1, 1, 3);
+  }
+  setBar(1);
+
+  const correct = log.filter(x => x.ok).length;
+  const correctLevels = log.filter(x => x.ok).map(x => x.level);
+  let newLevel = 1;
+  if(correctLevels.length){
+    const avg = correctLevels.reduce((a,b) => a+b, 0) / correctLevels.length;
+    newLevel = Math.round(avg);
+    if(correct === TOTAL) newLevel = 3;
+  }
+  newLevel = clamp(newLevel, 1, 3);
+
+  state.testLog.push({ round, correct, level: newLevel });
+  const prevLevel = state.level;
+  state.level = newLevel;
+
+  showTestResult(round, correct, TOTAL, newLevel, prevLevel);
+}
+
+function pickQuestion(level, used){
+  const free = QUESTIONS.filter(q => q.level === level && !used.has(q.id));
+  if(free.length) return shuffle(free)[0];
+  const anyFree = QUESTIONS.filter(q => !used.has(q.id));
+  if(anyFree.length) return shuffle(anyFree)[0];
+  return shuffle(QUESTIONS)[0];
+}
+
+/* ---------- Eine Frage stellen ---------- */
+async function askQuestion(q){
+  /* Multiple Choice (hören / lesen / grammatik) */
+  if(q.type === 'listen' || q.type === 'read' || q.type === 'grammar'){
+    let body = '';
+    if(q.type === 'listen'){
+      body = `<button class="secondary" id="playBtn">🔊 Anhören</button>
+              <p class="hint center" style="margin-top:10px">Mehrfach anhörbar</p>`;
+    } else if(q.type === 'read'){
+      body = `<div class="hanzi">${q.hanzi}</div>`;
+    } else {
+      body = `<div class="sentence">${q.sentence}</div>`;
+    }
+    const opts = shuffle(q.options);
+    render(`
+      <div class="card">
+        <div class="step">Frage</div>
+        <h2>${q.prompt}</h2>
+        ${body}
+        <div class="options" id="opts">
+          ${opts.map((o,i) => `<button class="opt" data-i="${i}">${o}</button>`).join('')}
+        </div>
+        <div class="result" id="fb"></div>
+      </div>
+    `);
+    if(q.type === 'listen'){
+      $('#playBtn').onclick = () => speak(q.audio, 0.75);
+      speak(q.audio, 0.75);
+    }
+    return new Promise(resolve => {
+      document.querySelectorAll('.opt').forEach(btn => {
+        btn.onclick = () => {
+          const chosen = btn.textContent;
+          const ok = chosen === q.answer;
+          document.querySelectorAll('.opt').forEach(b => b.disabled = true);
+          btn.classList.add(ok ? 'right' : 'wrong');
+          if(!ok){
+            document.querySelectorAll('.opt').forEach(b => {
+              if(b.textContent === q.answer) b.classList.add('right');
+            });
+          }
+          $('#fb').innerHTML = `<p class="${ok?'good':'bad'}">
+            ${ok ? '✓ Richtig!' : '✗ Leider falsch.'}
+            ${q.explain ? `<br><span class="hint">${q.explain}</span>` : ''}</p>`;
+          setTimeout(() => resolve(ok), ok ? 1000 : 1800);
+        };
+      });
+    });
+  }
+
+  /* Schreibfrage */
+  if(q.type === 'write'){
+    render(`
+      <div class="card">
+        <div class="step">Frage · Schreiben</div>
+        <h2>${q.prompt}</h2>
+        <input type="text" id="answer" autocomplete="off" autocapitalize="off"
+               spellcheck="false" placeholder="Pinyin eingeben…">
+        <button class="primary" id="check" style="width:100%">Prüfen</button>
+        <div class="result" id="fb"></div>
+      </div>
+    `);
+    const inp = $('#answer');
+    inp.focus();
+    return new Promise(resolve => {
+      const check = () => {
+        const ok = normPy(inp.value) === normPy(q.answer);
+        $('#fb').innerHTML = ok
+          ? `<p class="good">✓ Richtig! &nbsp; ${q.display || q.answer}</p>`
+          : `<p class="bad">✗ Richtig wäre: <b>${q.display || q.answer}</b></p>`;
+        inp.disabled = true; $('#check').disabled = true;
+        setTimeout(() => resolve(ok), ok ? 1100 : 1900);
+      };
+      $('#check').onclick = check;
+      inp.onkeydown = e => { if(e.key === 'Enter') check(); };
+    });
+  }
+}
+
+/* ============================================================
+   8. TESTERGEBNIS ANZEIGEN
+   ============================================================ */
+function showTestResult(round, correct, total, level, prevLevel){
+  setPhase(`Test ${round} abgeschlossen`);
+  setBar(1);
+
+  let note = '';
+  if(round > 1){
+    if(level > prevLevel)      note = '🎉 Du hast dich verbessert!';
+    else if(level < prevLevel) note = 'Wir festigen die Grundlagen noch etwas.';
+    else                       note = 'Niveau bestätigt – weiter geht\'s.';
+  }
+
+  render(`
+    <div class="card center">
+      <div class="badge">Test ${round} · Ergebnis</div>
+      <div class="big">${correct} / ${total}</div>
+      <p class="prompt">Dein aktuelles Niveau:</p>
+      <h1 style="color:var(--gold)">${LEVEL_NAME[level]}</h1>
+      ${note ? `<p class="hint" style="margin-top:12px">${note}</p>` : ''}
+      <div class="btnrow" style="margin-top:24px">
+        <button class="primary" id="contBtn">Weiter zu den Übungen</button>
+      </div>
+    </div>
+  `);
+  $('#contBtn').onclick = () => startPractice(level, round);
+}
+
+/* ============================================================
+   9. ÜBUNGSPHASE
+   ============================================================ */
+async function startPractice(level, round){
+  const ITEMS = 3;
+  const pool = shuffle(VOCAB[level]).slice(0, ITEMS);
+
+  for(let i = 0; i < ITEMS; i++){
+    setPhase(`Übungen · Runde ${round} · ${i+1}/${ITEMS}`);
+    setBar(i / ITEMS);
+    await practiceItem(pool[i], level, i + 1, ITEMS);
+    if(!state.learned.find(v => v.hz === pool[i].hz)) state.learned.push(pool[i]);
+  }
+  setBar(1);
+
+  if(round === 1){
+    showPracticeDone(round);
+  } else {
+    showFinal();
+  }
+}
+
+/* ---------- Ein Vokabel-Item: 3 Schritte ---------- */
+async function practiceItem(item, level, idx, total){
+  await stepListen(item, level, idx, total);
+  await stepSpeak(item, idx, total);
+  await stepWrite(item, idx, total);
+}
+
+/* --- Schritt 1: HÖREN + Bedeutung wählen --- */
+function stepListen(item, level, idx, total){
+  const distractors = shuffle(VOCAB[level].filter(v => v.hz !== item.hz))
+                        .slice(0, 2).map(v => v.de);
+  const opts = shuffle([item.de, ...distractors]);
+
+  setPhase(`Übung ${idx}/${total} · Hören`);
+  render(`
+    <div class="card">
+      <div class="step">Schritt 1 von 3 · Hören</div>
+      <div class="center">
+        <button class="secondary" id="playBtn">🔊 Anhören</button>
+      </div>
+      <h2 style="margin-top:20px">Was bedeutet das?</h2>
+      <div class="options" id="opts">
+        ${opts.map((o,i) => `<button class="opt" data-i="${i}">${o}</button>`).join('')}
+      </div>
+      <div class="result" id="fb"></div>
+    </div>
+  `);
+  $('#playBtn').onclick = () => speak(item.hz, 0.75);
+  speak(item.hz, 0.75);
+
+  return new Promise(resolve => {
+    document.querySelectorAll('.opt').forEach(btn => {
+      btn.onclick = () => {
+        const ok = btn.textContent === item.de;
+        document.querySelectorAll('.opt').forEach(b => b.disabled = true);
+        btn.classList.add(ok ? 'right' : 'wrong');
+        if(!ok){
+          document.querySelectorAll('.opt').forEach(b => {
+            if(b.textContent === item.de) b.classList.add('right');
+          });
+        }
+        $('#fb').innerHTML = `<p class="${ok?'good':'bad'}">
+          ${ok ? '✓ Richtig!' : `✗ Richtig: ${item.de}`}</p>`;
+        setTimeout(resolve, ok ? 900 : 1500);
+      };
+    });
+  });
+}
+
+/* --- Schritt 2: SPRECHEN --- */
+function stepSpeak(item, idx, total){
+  setPhase(`Übung ${idx}/${total} · Sprechen`);
+  render(`
+    <div class="card">
+      <div class="step">Schritt 2 von 3 · Sprechen</div>
+      <p class="prompt center">Hör zu und sprich nach:</p>
+      <div class="hanzi">${item.hz}</div>
+      <div class="pinyin">${item.py} <span class="de">— ${item.de}</span></div>
+      <div class="btnrow">
+        <button class="secondary" id="playBtn">🔊 Vorsprechen</button>
+        ${SR ? '<button class="primary" id="micBtn">🎤 Aufnehmen</button>' : ''}
+      </div>
+      <div class="result" id="fb">
+        ${SR ? '' : '<p class="hint">Mikrofon nicht verfügbar – bitte laut mitsprechen.</p>'}
+      </div>
+      ${SR ? '' : '<div class="btnrow"><button class="primary" id="skipBtn">Weiter</button></div>'}
+    </div>
+  `);
+  $('#playBtn').onclick = () => speak(item.hz, 0.65);
+  speak(item.hz, 0.65);
+
+  if(!SR){
+    return new Promise(res => { $('#skipBtn').onclick = res; });
+  }
+
+  return new Promise(resolve => {
+    let tries = 0;
+    const mic = $('#micBtn');
+    const fb  = $('#fb');
+
+    mic.onclick = async () => {
+      mic.disabled = true;
+      mic.classList.add('mic-active');
+      fb.innerHTML = '<p class="hint">🎤 Ich höre zu … sprich jetzt.</p>';
+      let alts = [];
+      try{
+        alts = await listenOnce();
+      }catch(e){
+        mic.classList.remove('mic-active');
+        fb.innerHTML = `<p class="bad">Spracherkennung fehlgeschlagen (${e}).</p>
+                        <button class="secondary" id="skipBtn2">Weiter</button>`;
+        $('#skipBtn2').onclick = resolve;
+        return;
+      }
+      mic.classList.remove('mic-active');
+
+      const target = normHz(item.hz);
+      const ok = alts.some(t => normHz(t) === target)
+              || alts.some(t => normHz(t).includes(target) || target.includes(normHz(t)));
+
+      if(ok){
+        fb.innerHTML = `<p class="good">✓ Sehr gut! Erkannt: „${alts[0] || ''}"</p>`;
+        setTimeout(resolve, 900);
+        return;
+      }
+
+      tries++;
+      fb.innerHTML = `<p class="bad">✗ Erkannt: „${alts[0] || '—'}" &nbsp;·&nbsp; Ziel: ${item.hz}</p>`;
+      if(tries >= 3){
+        fb.innerHTML += '<p class="hint">Kein Problem – weiter geht\'s.</p>';
+        setTimeout(resolve, 1500);
+      } else {
+        mic.disabled = false;
+        mic.textContent = '🎤 Nochmal versuchen';
+      }
+    };
+  });
+}
+
+/* --- Schritt 3: SCHREIBEN --- */
+function stepWrite(item, idx, total){
+  setPhase(`Übung ${idx}/${total} · Schreiben`);
+  render(`
+    <div class="card">
+      <div class="step">Schritt 3 von 3 · Schreiben</div>
+      <h2>Schreibe „${item.de}" auf Chinesisch</h2>
+      <p class="hint">Pinyin genügt – Töne sind optional. (Zeichen werden auch akzeptiert.)</p>
+      <input type="text" id="answer" autocomplete="off" autocapitalize="off"
+             spellcheck="false" placeholder="z. B. ${item.py}">
+      <button class="primary" id="check" style="width:100%">Prüfen</button>
+      <div class="result" id="fb"></div>
+    </div>
+  `);
+  const inp = $('#answer');
+  inp.focus();
+
+  return new Promise(resolve => {
+    const check = () => {
+      const val = inp.value.trim();
+      const ok = normPy(val) === normPy(item.py) || normHz(val) === normHz(item.hz);
+      $('#fb').innerHTML = ok
+        ? `<p class="good">✓ Richtig! &nbsp; ${item.hz} · ${item.py}</p>`
+        : `<p class="bad">✗ Richtig wäre: <b>${item.hz} · ${item.py}</b></p>`;
+      inp.disabled = true; $('#check').disabled = true;
+      speak(item.hz, 0.75);
+      setTimeout(resolve, ok ? 1100 : 1900);
+    };
+    $('#check').onclick = check;
+    inp.onkeydown = e => { if(e.key === 'Enter') check(); };
+  });
+}
+
+/* ============================================================
+   10. ZWISCHEN- UND ENDBILDSCHIRM
+   ============================================================ */
+function showPracticeDone(round){
+  setPhase('Übungsrunde abgeschlossen');
+  setBar(1);
+  render(`
+    <div class="card center">
+      <div class="badge">Runde ${round} geschafft</div>
+      <h1>Gut gemacht! 🎉</h1>
+      <p class="prompt">Jetzt folgt der zweite Test – er zeigt, ob sich dein Niveau verschoben hat.</p>
+      <div class="btnrow" style="margin-top:20px">
+        <button class="primary" id="nextBtn">Zweiten Test starten</button>
+      </div>
+    </div>
+  `);
+  $('#nextBtn').onclick = () => {
+    state.round = 2;
+    startTest(2, state.level);
+  };
+}
+
+function showFinal(){
+  setPhase('Fertig');
+  setBar(1);
+  const t1 = state.testLog.find(t => t.round === 1);
+  const t2 = state.testLog.find(t => t.round === 2);
+  const learnedHtml = state.learned.length
+    ? state.learned.map(v => `<li><b>${v.hz}</b> · ${v.py} — ${v.de}</li>`).join('')
+    : '<li>—</li>';
+
+  render(`
+    <div class="card">
+      <div class="badge">Abschluss · Runde 2</div>
+      <h1>Deine Auswertung</h1>
+      <div class="stat"><span>Test 1</span><span>${t1 ? t1.correct : '–'}/5 → ${t1 ? LEVEL_NAME[t1.level] : '–'}</span></div>
+      <div class="stat"><span>Test 2</span><span>${t2 ? t2.correct : '–'}/5 → ${t2 ? LEVEL_NAME[t2.level] : '–'}</span></div>
+      <div class="stat"><span>Aktuelles Niveau</span><span>${LEVEL_NAME[state.level]}</span></div>
+    </div>
+    <div class="card">
+      <h2>Diese Vokabeln hast du geübt</h2>
+      <ul class="list">${learnedHtml}</ul>
+    </div>
+    <div class="card center">
+      <p class="hint">Möchtest du eine weitere Runde auf deinem jetzigen Niveau drehen?</p>
+      <div class="btnrow">
+        <button class="primary" id="againBtn">Neue Übungsrunde</button>
+        <button class="secondary" id="restartBtn">Von vorn beginnen</button>
+      </div>
+    </div>
+  `);
+  $('#againBtn').onclick = () => startPractice(state.level, 3);
+  $('#restartBtn').onclick = () => {
+    state.level = 1; state.round = 1; state.testLog = []; state.learned = [];
+    /* ============================================================
+   5b. MIKROFON-BERECHTIGUNG (allererster Bildschirm)
+   ============================================================ */
+async function showMicPermission(){
+  setPhase('Mikrofon-Berechtigung');
+  setBar(0);
+
+  /* --- Fall 1: Kein sicherer Kontext (file://) oder API fehlt --- */
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    render(`
+      <div class="card center">
+        <div class="badge">Hinweis · Mikrofon</div>
+        <h1>Mikrofon nicht verfügbar</h1>
+        <p class="prompt">
+          Diese Seite läuft nicht in einem sicheren Kontext. Mikrofonzugriff
+          funktioniert nur über <code>https://</code> oder <code>http://localhost</code>.
+        </p>
+        <p class="hint">
+          Tipp: Starte einen lokalen Server, z.&nbsp;B. mit
+          <code>python -m http.server 8000</code>, und öffne dann
+          <code>http://localhost:8000/mandarin-trainer.html</code>.
+        </p>
+        <div class="btnrow" style="margin-top:20px">
+          <button class="primary" id="continueBtn">Ohne Mikrofon fortfahren</button>
+        </div>
+      </div>
+    `);
+    $('#continueBtn').onclick = () => showStart();
+    return;
+  }
+
+  /* --- Fall 2: Berechtigung wurde schon früher erteilt --- */
+  let alreadyGranted = false;
+  try{
+    if(navigator.permissions && navigator.permissions.query){
+      const status = await navigator.permissions.query({name:'microphone'});
+      alreadyGranted = status.state === 'granted';
+    }
+  }catch(e){ /* nicht unterstützt – ignorieren */ }
+
+  if(alreadyGranted){
+    showStart();
+    return;
+  }
+
+  /* --- Fall 3: Ausdrückliche Zustimmung einholen --- */
+  render(`
+    <div class="card center">
+      <div class="badge">Schritt 1 · Mikrofon-Zugriff</div>
+      <h1>🎤 Mikrofon erlauben</h1>
+      <p class="prompt">
+        Für die Sprechübungen benötigt dieses Tool Zugriff auf dein Mikrofon.
+      </p>
+      <p class="hint" style="margin-top:16px">
+        Dein Browser fragt jetzt nach der Erlaubnis – bitte klicke auf <b>„Zulassen“</b>.
+      </p>
+      <p class="hint" style="margin-top:8px; font-size:13px">
+        Audio wird nur während der Aufnahme verarbeitet und nicht gespeichert.
+      </p>
+      <div class="btnrow" style="margin-top:24px">
+        <button class="primary" id="allowBtn">Mikrofon erlauben</button>
+        <button class="secondary" id="skipBtn">Ohne Mikrofon fortfahren</button>
+      </div>
+      <div class="result" id="micFb"></div>
+    </div>
+  `);
+
+  $('#allowBtn').onclick = async () => {
+    const fb  = $('#micFb');
+    const btn = $('#allowBtn');
+    btn.disabled = true;
+    fb.innerHTML = '<p class="hint">Warte auf deine Erlaubnis …</p>';
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      stream.getTracks().forEach(t => t.stop()); // sofort wieder freigeben
+      fb.innerHTML = '<p class="good">✓ Mikrofon erlaubt. Weiter geht\'s …</p>';
+      setTimeout(showStart, 900);
+    }catch(e){
+      let msg = 'Der Mikrofon-Zugriff wurde nicht erteilt.';
+      if(e.name === 'NotAllowedError'){
+        msg = 'Du hast den Zugriff abgelehnt. Du kannst ihn über das Schloss-Symbol '
+            + 'in der Adressleiste nachträglich erlauben und die Seite neu laden.';
+      } else if(e.name === 'NotFoundError'){
+        msg = 'Kein Mikrofon gefunden. Bitte prüfe deine Hardware.';
+      } else if(e.name === 'NotReadableError'){
+        msg = 'Das Mikrofon wird gerade von einer anderen Anwendung benutzt.';
+      }
+      fb.innerHTML = `<p class="bad">✗ ${msg}</p>`;
+      btn.disabled = false;
+      btn.textContent = 'Erneut versuchen';
+    }
+  };
+
+  $('#skipBtn').onclick = () => showStart();
+}
+    showMicPermission();
+  };
+}
+
+/* ============================================================
+   11. LOS
+   ============================================================ */
+showStart();
+</script>
+</body>
+</html>
